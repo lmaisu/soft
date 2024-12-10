@@ -103,6 +103,8 @@
     <button onclick="addRow()">Add Entry</button>
 
     <script>
+        let countdownIntervals = [];
+
         function addRow() {
             const table = document.getElementById('psTable');
 
@@ -180,7 +182,7 @@
 
             // Time Left
             const timerCell = document.createElement('td');
-            timerCell.innerHTML = `<span>--:--</span>`;
+            timerCell.innerHTML = `<span>--:--:--</span>`;
             row.appendChild(timerCell);
 
             // Status
@@ -190,8 +192,9 @@
 
             table.appendChild(row);
 
-            // Update the row periodically
-            setInterval(() => updateTimer(row), 1000);
+            // Start the countdown for this row
+            const intervalId = setInterval(() => updateTimer(row), 1000);
+            countdownIntervals.push(intervalId);
         }
 
         function updatePrice(element) {
@@ -237,9 +240,10 @@
 
             const timerCell = row.cells[7].querySelector('span');
             if (remainingTime > 0) {
-                const minutes = Math.floor(remainingTime / 60000);
+                const hours = Math.floor(remainingTime / 3600000);
+                const minutes = Math.floor((remainingTime % 3600000) / 60000);
                 const seconds = Math.floor((remainingTime % 60000) / 1000);
-                timerCell.innerText = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                timerCell.innerText = `${hours}:${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
             } else {
                 timerCell.innerText = "Time's Up!";
                 timerCell.classList.add('time-red');
