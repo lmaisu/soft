@@ -1,255 +1,295 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PlayStation Zone Management</title>
-    <style>
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            background-color: #000;
-            color: #fff;
-            padding: 20px;
-            margin: 0;
-        }
+import React, { useState, useEffect } from 'react';
+import './App.css';
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
+const PLAYSTATION_OPTIONS = [
+  { label: 'Basic 1', type: 'basic' },
+  { label: 'Basic 2', type: 'basic' },
+  { label: 'Basic 3', type: 'basic' },
+  { label: 'Basic 4', type: 'basic' },
+  { label: 'Basic 5', type: 'basic' },
+  { label: 'Basic 6', type: 'basic' },
+  { label: 'Basic 7', type: 'basic' },
+  { label: 'VIP I', type: 'vip' },
+  { label: 'VIP II', type: 'vip' },
+];
 
-        th, td {
-            border: 1px solid #444;
-            padding: 10px;
-            text-align: center;
-        }
+const PAYMENT_OPTIONS = ['Not Paid', 'Cash', 'BOG', 'TBC'];
 
-        th {
-            background-color: #121212;
-            color: #ff914d;
-        }
+function App() {
+  const [bookings, setBookings] = useState([]);
 
-        input, select {
-            width: 100%;
-            padding: 5px;
-            background-color: #222;
-            color: #fff;
-            border: 1px solid #444;
-            border-radius: 5px;
-            font-size: 14px;
-        }
+  // Add a new booking row with default values
+  const addBooking = () => {
+    const now = new Date();
+    // Start time is current time + 3 minutes prep
+    const start = new Date(now.getTime() + 3 * 60 * 1000);
+    // Default end time 1 hour after start
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
 
-        button {
-            background-color: #ff914d;
-            color: #000;
-            font-weight: bold;
-            border: none;
-            padding: 10px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
+    const newBooking = {
+      id: Date.now(),
+      playstation: 'Basic 1',
+      psType: 'basic',
+      startTime: start,
+      endTime: end,
+      controllers: 2, // default for basic
+      slushies: 0,
+      paymentStatus: 'Not Paid',
+      manualPriceAdjustment: 0,
+    };
+    setBookings([...bookings, newBooking]);
+  };
 
-        .status-indicator {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            display: inline-block;
-        }
+  // Update booking fields
+  const updateBookingField = (id, field, value) => {
+    setBookings((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, [field]: value } : b))
+    );
+  };
 
-        .status-green {
-            background-color: #00ff00;
-        }
+  // Convert date to a time string
+  const formatTime = (date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
-        .status-red {
-            background-color: #ff0000;
-        }
+  // Parse user-input time and return a Date object with the new end time
+  const parseTimeInput = (date, timeStr) => {
+    // Expected format: "HH:MM"
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const newDate = new Date(date);
+    newDate.setHours(hours);
+    newDate.setMinutes(minutes);
+    return newDate;
+  };
 
-        .blinking {
-            animation: blink 1s infinite;
-        }
+  const calculateDurationHours = (start, end) => {
+    const diffMs = end - start;
+    const diffHrs = diffMs / 1000 / 3600;
+    return Math.max(diffHrs, 0);
+  };
 
-        .time-red {
-            color: #ff0000;
-        }
+  // Pricing calculation
+  const calculatePrice = (booking) => {
+    const duration = calculateDurationHours(booking.startTime, booking.endTime);
+    let basePrice = 0;
+    if (booking.psType === 'basic') {
+      // Basic pricing:
+      // 2 controllers = 8₾/hour
+      // 4 controllers = 12₾/hour
+      const rate = booking.controllers === 4 ? 12 : 8;
+      basePrice = rate * duration;
+      // Check free slushies
+      const freeSlushies = duration >= 2 ? 2 : 0;
+      const extraSlushies = Math.max(booking.slushies - freeSlushies, 0);
+      const slushiesCost = extraSlushies * 3.5;
+      basePrice += slushiesCost;
+    } else {
+      // VIP pricing:
+      // 1 hour = 25₾
+      // 2 hours = 45₾ (22.5₾/hour)
+      // 3 hours = 60₾ (20₾/hour)
+      // 3+ hours = 20₾/hour
+      let vipCost = 0;
+      if (duration <= 1) {
+        vipCost = 25;
+      } else if (duration <= 2) {
+        vipCost = 45;
+      } else if (duration <= 3) {
+        vipCost = 60;
+      } else {
+        vipCost = duration * 20;
+      }
+      // Slushies: For VIP, the rules aren't specified as different, so assume no free slushies?
+      // If wanting the same rule as basics for slushies (2 free at 2+ hours), you can do:
+      const freeSlushies = duration >= 2 ? 2 : 0;
+      const extraSlushies = Math.max(booking.slushies - freeSlushies, 0);
+      const slushiesCost = extraSlushies * 3.5;
+      vipCost += slushiesCost;
+      basePrice = vipCost;
+    }
 
-        @keyframes blink {
-            50% {
-                background-color: #ff914d;
-            }
-        }
-    </style>
-</head>
-<body>
-    <h1>PlayStation Zone Management</h1>
-    <table>
+    // Manual price adjustment if any
+    basePrice += Number(booking.manualPriceAdjustment) || 0;
+    return Math.round(basePrice * 100) / 100; // Round to 2 decimals
+  };
+
+  // Countdown timer logic
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getRemainingTime = (booking) => {
+    const diff = booking.endTime - now;
+    return Math.max(diff, 0);
+  };
+
+  const formatCountdown = (ms) => {
+    const totalSec = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    return `${hours.toString().padStart(2,'0')}:${minutes
+      .toString()
+      .padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+  };
+
+  return (
+    <div className="app-container">
+      <h1>PlayStation Zone Management</h1>
+      <button onClick={addBooking}>Add Booking</button>
+      <table className="booking-table">
         <thead>
-            <tr>
-                <th>PlayStation</th>
-                <th>Start Time</th>
-                <th>Duration</th>
-                <th>Controllers</th>
-                <th>Slushies</th>
-                <th>Total Price</th>
-                <th>Payment</th>
-                <th>Time Left</th>
-                <th>Status</th>
-            </tr>
+          <tr>
+            <th>PlayStation</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Duration (Hrs)</th>
+            <th>Controllers</th>
+            <th>Slushies</th>
+            <th>Payment</th>
+            <th>Price (₾)</th>
+            <th>Countdown</th>
+          </tr>
         </thead>
-        <tbody id="psTable">
-            <!-- Dynamic rows will be added here -->
+        <tbody>
+          {bookings.map((booking) => {
+            const duration = calculateDurationHours(
+              booking.startTime,
+              booking.endTime
+            );
+            const totalPrice = calculatePrice(booking);
+            const remainingMs = getRemainingTime(booking);
+            const countdown = formatCountdown(remainingMs);
+            const isTimeUp = remainingMs <= 0;
+            const isAlmostUp = remainingMs < 5 * 60 * 1000 && !isTimeUp;
+
+            // Determine row style based on status
+            let rowClass = '';
+            if (booking.paymentStatus !== 'Not Paid') {
+              // Payment done
+              rowClass = 'payment-completed';
+            } 
+            if (isAlmostUp) {
+              rowClass = 'almost-up';
+            }
+            if (isTimeUp) {
+              rowClass = 'time-up';
+            }
+
+            return (
+              <tr key={booking.id} className={rowClass}>
+                <td>
+                  <select
+                    value={booking.playstation}
+                    onChange={(e) => {
+                      const chosen = e.target.value;
+                      const psObj = PLAYSTATION_OPTIONS.find((p) => p.label === chosen);
+                      updateBookingField(booking.id, 'playstation', chosen);
+                      updateBookingField(booking.id, 'psType', psObj.type);
+                    }}
+                  >
+                    {PLAYSTATION_OPTIONS.map((opt) => (
+                      <option key={opt.label} value={opt.label}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>{formatTime(booking.startTime)}</td>
+                <td>
+                  {/* End time selector: can type manually, e.g. "14:30" */}
+                  <input
+                    type="time"
+                    value={formatTime(booking.endTime)}
+                    onChange={(e) => {
+                      const newEndTime = parseTimeInput(booking.endTime, e.target.value);
+                      updateBookingField(booking.id, 'endTime', newEndTime);
+                    }}
+                  />
+                </td>
+                <td>{duration.toFixed(2)}</td>
+                <td>
+                  <select
+                    value={booking.controllers}
+                    onChange={(e) =>
+                      updateBookingField(
+                        booking.id,
+                        'controllers',
+                        Number(e.target.value)
+                      )
+                    }
+                  >
+                    <option value={2}>2 Controllers</option>
+                    <option value={4}>4 Controllers</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min="0"
+                    value={booking.slushies}
+                    onChange={(e) =>
+                      updateBookingField(
+                        booking.id,
+                        'slushies',
+                        Number(e.target.value)
+                      )
+                    }
+                    style={{ width: '50px' }}
+                  />
+                </td>
+                <td>
+                  <select
+                    value={booking.paymentStatus}
+                    onChange={(e) =>
+                      updateBookingField(booking.id, 'paymentStatus', e.target.value)
+                    }
+                  >
+                    {PAYMENT_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  {totalPrice} ₾
+                  <br />
+                  <span style={{ fontSize: '0.8em' }}>
+                    Adj: &nbsp;
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={booking.manualPriceAdjustment}
+                      onChange={(e) =>
+                        updateBookingField(
+                          booking.id,
+                          'manualPriceAdjustment',
+                          e.target.value
+                        )
+                      }
+                      style={{ width: '50px' }}
+                    />
+                  </span>
+                </td>
+                <td>
+                  {isTimeUp ? (
+                    <span>Time’s Up!</span>
+                  ) : (
+                    <span>{countdown}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
-    </table>
-    <button onclick="addRow()">Add Entry</button>
+      </table>
+    </div>
+  );
+}
 
-    <script>
-        let countdownIntervals = [];
-
-        function addRow() {
-            const table = document.getElementById('psTable');
-
-            const row = document.createElement('tr');
-
-            // PlayStation Selection
-            const psCell = document.createElement('td');
-            psCell.innerHTML = `
-                <select>
-                    <option value="Basic1">Basic 1</option>
-                    <option value="Basic2">Basic 2</option>
-                    <option value="VIP1">VIP Room I</option>
-                    <option value="VIP2">VIP Room II</option>
-                </select>
-            `;
-            row.appendChild(psCell);
-
-            // Start Time
-            const startCell = document.createElement('td');
-            const now = new Date();
-            now.setMinutes(now.getMinutes() + 3);
-            const startTime = now.toLocaleTimeString("en-GB", { hour: '2-digit', minute: '2-digit' });
-            startCell.innerHTML = `<input type="text" value="${startTime}" readonly>`;
-            row.appendChild(startCell);
-
-            // Duration
-            const durationCell = document.createElement('td');
-            durationCell.innerHTML = `
-                <select onchange="updatePrice(this)">
-                    <option value="30">30 Minutes</option>
-                    <option value="60">1 Hour</option>
-                    <option value="90">1 Hour 30 Minutes</option>
-                    <option value="120">2 Hours</option>
-                    <option value="150">2 Hours 30 Minutes</option>
-                    <option value="180">3 Hours</option>
-                    <option value="240">4 Hours</option>
-                    <option value="300">5 Hours</option>
-                    <option value="360">6 Hours</option>
-                </select>
-                <input type="number" placeholder="Custom (Minutes)" min="1" onchange="updatePrice(this)">
-            `;
-            row.appendChild(durationCell);
-
-            // Controllers
-            const controllersCell = document.createElement('td');
-            controllersCell.innerHTML = `
-                <select onchange="updatePrice(this)">
-                    <option value="2">2 Controllers</option>
-                    <option value="4">4 Controllers</option>
-                </select>
-            `;
-            row.appendChild(controllersCell);
-
-            // Slushies
-            const slushiesCell = document.createElement('td');
-            slushiesCell.innerHTML = `<input type="number" value="0" min="0" onchange="updatePrice(this)">`;
-            row.appendChild(slushiesCell);
-
-            // Total Price
-            const priceCell = document.createElement('td');
-            priceCell.innerHTML = `<span>0₾</span>`;
-            row.appendChild(priceCell);
-
-            // Payment Method
-            const paymentCell = document.createElement('td');
-            paymentCell.innerHTML = `
-                <select onchange="updateStatus(this)">
-                    <option value="not-paid">Not Paid</option>
-                    <option value="cash">Cash</option>
-                    <option value="bog">BOG</option>
-                    <option value="tbc">TBC</option>
-                </select>
-            `;
-            row.appendChild(paymentCell);
-
-            // Time Left
-            const timerCell = document.createElement('td');
-            timerCell.innerHTML = `<span>--:--:--</span>`;
-            row.appendChild(timerCell);
-
-            // Status
-            const statusCell = document.createElement('td');
-            statusCell.innerHTML = `<span class="status-indicator status-red"></span>`;
-            row.appendChild(statusCell);
-
-            table.appendChild(row);
-
-            // Start the countdown for this row
-            const intervalId = setInterval(() => updateTimer(row), 1000);
-            countdownIntervals.push(intervalId);
-        }
-
-        function updatePrice(element) {
-            const row = element.closest('tr');
-            const durationSelect = row.cells[2].querySelector('select');
-            const durationInput = row.cells[2].querySelector('input');
-            const duration = parseInt(durationInput.value || durationSelect.value) || 0;
-            const controllers = parseInt(row.cells[3].querySelector('select').value) || 2;
-            const slushies = parseInt(row.cells[4].querySelector('input').value) || 0;
-
-            // Base price calculations
-            const baseRate = controllers === 2 ? 8 : 12; // 8₾ for 2 controllers, 12₾ for 4
-            const totalBasePrice = (baseRate / 60) * duration; // Calculate price based on duration
-            const extraSlushiePrice = slushies > (duration >= 120 ? 2 : 0) ? (slushies - (duration >= 120 ? 2 : 0)) * 3.5 : 0;
-
-            const totalPrice = totalBasePrice + extraSlushiePrice;
-
-            // Update the price cell
-            row.cells[5].querySelector('span').innerText = `${totalPrice.toFixed(2)}₾`;
-        }
-
-        function updateStatus(select) {
-            const row = select.closest('tr');
-            const statusIndicator = row.cells[8].querySelector('.status-indicator');
-            if (select.value !== 'not-paid') {
-                statusIndicator.classList.remove('status-red');
-                statusIndicator.classList.add('status-green');
-            } else {
-                statusIndicator.classList.remove('status-green');
-                statusIndicator.classList.add('status-red');
-            }
-        }
-
-        function updateTimer(row) {
-            const startTime = new Date();
-            const durationSelect = row.cells[2].querySelector('select');
-            const durationInput = row.cells[2].querySelector('input');
-            const duration = parseInt(durationInput.value || durationSelect.value) || 0;
-            const endTime = new Date(startTime.getTime() + duration * 60000);
-
-            const now = new Date();
-            const remainingTime = Math.max(0, endTime - now);
-
-            const timerCell = row.cells[7].querySelector('span');
-            if (remainingTime > 0) {
-                const hours = Math.floor(remainingTime / 3600000);
-                const minutes = Math.floor((remainingTime % 3600000) / 60000);
-                const seconds = Math.floor((remainingTime % 60000) / 1000);
-                timerCell.innerText = `${hours}:${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-            } else {
-                timerCell.innerText = "Time's Up!";
-                timerCell.classList.add('time-red');
-                row.classList.add('blinking');
-            }
-        }
-    </script>
-</body>
-</html>
+export default App;
